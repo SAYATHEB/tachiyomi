@@ -8,7 +8,6 @@ import android.support.v4.view.GravityCompat
 import android.view.MenuItem
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
-import eu.kanade.tachiyomi.ui.backup.BackupFragment
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.catalogue.CatalogueFragment
 import eu.kanade.tachiyomi.ui.download.DownloadActivity
@@ -38,8 +37,8 @@ class MainActivity : BaseActivity() {
         setAppTheme()
         super.onCreate(savedState)
 
-        // Do not let the launcher create a new activity
-        if (intent.flags and Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT != 0) {
+        // Do not let the launcher create a new activity http://stackoverflow.com/questions/16283079
+        if (!isTaskRoot) {
             finish()
             return
         }
@@ -71,7 +70,6 @@ class MainActivity : BaseActivity() {
                         val intent = Intent(this, SettingsActivity::class.java)
                         startActivityForResult(intent, REQUEST_OPEN_SETTINGS)
                     }
-                    R.id.nav_drawer_backup -> setFragment(BackupFragment.newInstance(), id)
                 }
             }
             drawer.closeDrawer(GravityCompat.START)
@@ -80,11 +78,19 @@ class MainActivity : BaseActivity() {
 
         if (savedState == null) {
             // Set start screen
-            setSelectedDrawerItem(startScreenId)
+            when (intent.action) {
+                SHORTCUT_LIBRARY -> setSelectedDrawerItem(R.id.nav_drawer_library)
+                SHORTCUT_RECENTLY_UPDATED -> setSelectedDrawerItem(R.id.nav_drawer_recent_updates)
+                SHORTCUT_RECENTLY_READ -> setSelectedDrawerItem(R.id.nav_drawer_recently_read)
+                SHORTCUT_CATALOGUES -> setSelectedDrawerItem(R.id.nav_drawer_catalogues)
+                else ->  setSelectedDrawerItem(startScreenId)
+            }
 
             // Show changelog if needed
             ChangelogDialogFragment.show(this, preferences, supportFragmentManager)
         }
+
+
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -145,5 +151,10 @@ class MainActivity : BaseActivity() {
 
     companion object {
         private const val REQUEST_OPEN_SETTINGS = 200
+        // Shortcut actions
+        private const val SHORTCUT_LIBRARY = "eu.kanade.tachiyomi.SHOW_LIBRARY"
+        private const val SHORTCUT_RECENTLY_UPDATED = "eu.kanade.tachiyomi.SHOW_RECENTLY_UPDATED"
+        private const val SHORTCUT_RECENTLY_READ = "eu.kanade.tachiyomi.SHOW_RECENTLY_READ"
+        private const val SHORTCUT_CATALOGUES = "eu.kanade.tachiyomi.SHOW_CATALOGUES"
     }
 }

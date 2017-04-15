@@ -15,7 +15,9 @@ import com.f2prateek.rx.preferences.Preference
 import eu.davidea.flexibleadapter.FlexibleAdapter
 import eu.davidea.flexibleadapter.items.IFlexible
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.data.database.models.Category
 import eu.kanade.tachiyomi.data.database.models.Manga
+import eu.kanade.tachiyomi.data.preference.PreferencesHelper
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.ui.base.fragment.BaseRxFragment
 import eu.kanade.tachiyomi.ui.main.MainActivity
@@ -33,6 +35,7 @@ import nucleus.factory.RequiresPresenter
 import rx.Subscription
 import rx.android.schedulers.AndroidSchedulers
 import rx.subjects.PublishSubject
+import uy.kohesive.injekt.injectLazy
 import java.util.concurrent.TimeUnit.MILLISECONDS
 
 /**
@@ -44,6 +47,11 @@ open class CatalogueFragment : BaseRxFragment<CataloguePresenter>(),
         FlexibleAdapter.OnItemClickListener,
         FlexibleAdapter.OnItemLongClickListener,
         FlexibleAdapter.EndlessScrollListener<ProgressItem> {
+
+    /**
+     * Preferences helper.
+     */
+    private val preferences: PreferencesHelper by injectLazy()
 
     /**
      * Spinner shown in the toolbar to change the selected source.
@@ -530,23 +538,72 @@ open class CatalogueFragment : BaseRxFragment<CataloguePresenter>(),
     /**
      * Called when a manga is long clicked.
      *
+     * Adds the manga to the default category if none is set it shows a list of categories for the user to put the manga
+     * in, the list consists of the default category plus the user's categories. The default category is preselected on
+     * new manga, and on already favorited manga the manga's categories are preselected.
+     *
      * @param position the position of the element clicked.
      */
     override fun onItemLongClick(position: Int) {
+        // Get manga
         val manga = (adapter.getItem(position) as? CatalogueItem?)?.manga ?: return
+        // Fetch categories
+        val categories = presenter.getCategories()
 
-        val textRes = if (manga.favorite) R.string.remove_from_library else R.string.add_to_library
-
-        MaterialDialog.Builder(activity)
-                .items(getString(textRes))
-                .itemsCallback { dialog, itemView, which, text ->
-                    when (which) {
-                        0 -> {
-                            presenter.changeMangaFavorite(manga)
-                            adapter.notifyItemChanged(position)
+        if (manga.favorite){
+            MaterialDialog.Builder(activity)
+                    .items(getString(R.string.remove_from_library ))
+                    .itemsCallback { _, _, which, _ ->
+                        when (which) {
+                            0 -> {
+                                presenter.changeMangaFavorite(manga)
+                                adapter.notifyItemChanged(position)
+                            }
                         }
-                    }
-                }.show()
+                    }.show()
+        }else{
+            val defaultCategory = categories.find { it.id == preferences.defaultCategory()}
+            if(defaultCategory != null) {
+                presenter.changeMangaFavorite(manga)
+                presenter.moveMangaToCategory(defaultCategory, manga)
+                // Show manga has been added
+                context.toast(R.string.added_to_library)
+                adapter.notifyItemChanged(position)
+            } else {
+                MaterialDialog.Builder(activity)
+                        .title(R.string.action_move_category)
+                        .items(categories.map { it.name })
+                        .itemsCallbackMultiChoice(presenter.getMangaCategoryIds(manga)) { dialog, position, _ ->
+                            if (position.contains(0) && position.count() > 1) {
+                                // Deselect default category
+                                dialog.setSelectedIndices(position.filter {it > 0}.toTypedArray())
+                                dialog.context.toast(R.string.invalid_combination)
+                            }
+                            true
+                        }
+                        .alwaysCallMultiChoiceCallback()
+                        .positiveText(android.R.string.ok)
+                        .negativeText(android.R.string.cancel)
+                        .onPositive { dialog, _ ->
+                            val selectedCategories = dialog.selectedIndices?.map { categories[it] } ?: emptyList()
+                            updateMangaCategories(manga, selectedCategories, position)
+                        }
+                        .build()
+                        .show()
+            }
+        }
+    }
+
+    /**
+     * Update manga to use selected categories.
+     *
+     * @param manga needed to change
+     * @param selectedCategories selected categories
+     * @param position position of adapter
+     */
+    private fun updateMangaCategories(manga: Manga, selectedCategories: List<Category>, position: Int) {
+        presenter.updateMangaCategories(manga,selectedCategories)
+        adapter.notifyItemChanged(position)
     }
 
 }
